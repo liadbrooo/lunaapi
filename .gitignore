@@ -1,28 +1,6 @@
 ```
-# Dependencies
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Logs and temp files
-*.log
-*.tmp
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
-
-# OS generated files
-.DS_Store
-Thumbs.db
-
-# Python specific
 *.py[cod]
 *$py.class
 *.so
@@ -43,21 +21,33 @@ wheels/
 .installed.cfg
 *.egg
 
-# Testing
-.coverage
-htmlcov/
-.coverage.*
-.nosetests
-coverage.xml
-*.cover
+# Environment
+.env
+.env.local
+*.env.*
 
-# Virtual environments
-venv/
+# Dependencies
 .venv/
+venv/
+env/
 ENV/
-env.bak/
-venv.bak/
 
-# Documentation builds
-docs/_build/
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
 ```
