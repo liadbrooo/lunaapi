@@ -1,0 +1,14 @@
+{
+    "author": ["YourName"],
+    "install_msg": "LunaDoc cog loaded successfully! Use `[p]luna set token <token>` to configure your API token.",
+    "short": "Interact with the Luna API",
+    "description": "A comprehensive cog for querying the Luna API documentation. Features include server status, player info, bans, cases, staff list, game data, and crash reports.",
+    "end_user_data_statement": "This cog does not store any end user data.",
+    "required_cogs": {},
+    "requirements": ["aiohttp"],
+    "min_bot_version": "3.5.0",
+    "max_bot_version": "0.0.0",
+    "hidden": false,
+    "disabled": false,
+    "name": "LunaDoc"
+}
