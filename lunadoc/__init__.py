@@ -1,6 +1,6 @@
 from .lunadoc import LunaDoc
 
-__red_version__ = "3.5.0"
+__red_enduser_data_statement__ = "Dieser Cog speichert keine persönlichen Daten von Endbenutzern."
 
-async def setup(bot):
-    await bot.add_cog(LunaDoc(bot))
+def setup(bot):
+    bot.add_cog(LunaDoc(bot))
