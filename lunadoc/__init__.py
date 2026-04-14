@@ -1,4 +1,4 @@
-from .lunadoc import LunaDoc
+from .lunadoc.lunadoc import LunaDoc
 
 __red_enduser_data_statement__ = "Dieser Cog speichert keine persönlichen Daten von Endbenutzern."
 
