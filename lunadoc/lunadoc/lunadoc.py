@@ -6,44 +6,46 @@ import discord
 from discord.ext import commands as dcommands
 import aiohttp
 import asyncio
+from datetime import datetime
 
 class LunaDoc(commands.Cog):
     """Ein Cog zur Interaktion mit der Luna API."""
 
     def __init__(self, bot: Red):
         self.bot = bot
-        self.base_url = "https://api.luna.veryinsanee.space/api/public/v1"  # Offizielle API URL
-        self.token = None  # Token kann konfiguriert werden
+        self.base_url = "https://api.luna.veryinsanee.space/api/public/v1"
+        self.token = None
 
     async def api_request(self, endpoint: str, params: dict = None):
-        """Führt eine API-Anfrage durch."""
+        """Führt eine API-Anfrage durch und gibt die rohen Daten zurück."""
         url = f"{self.base_url}/{endpoint}"
         headers = {}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                if response.status == 200:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     data = await response.json()
-                    # Neue API gibt Daten oft in einem "data" oder "result" Feld zurück
+                    
+                    # Extrahiere die eigentlichen Daten aus der Antwort
                     if isinstance(data, dict):
-                        if "data" in data and isinstance(data["data"], list):
-                            return data["data"]
-                        elif "result" in data and isinstance(data["result"], list):
-                            return data["result"]
-                        elif "response" in data and isinstance(data["response"], list):
-                            return data["response"]
-                        # Wenn es ein Dict mit Fehler ist, gib es zurück
+                        # Verschiedene mögliche Schlüssel für die Daten
+                        for key in ["data", "result", "response", "players", "bans", "cases", "staff", "crashes"]:
+                            if key in data:
+                                return data[key]
+                        # Wenn es nur ein Fehlerobjekt ist
                         if "error" in data:
-                            return data
+                            return {"_error": data["error"]}
+                        # Wenn die Antwort selbst die Daten sind (z.B. bei einzelnen Objekten)
+                        return data
                     return data
-                elif response.status == 401:
-                    return {"error": "Ungültiger oder fehlender API-Token."}
-                elif response.status == 404:
-                    return {"error": "Ressource nicht gefunden."}
-                else:
-                    return {"error": f"API-Fehler: Status {response.status}"}
+        except aiohttp.ClientConnectorError:
+            return {"_error": "Verbindung zur API fehlgeschlagen. DNS oder Netzwerkproblem."}
+        except asyncio.TimeoutError:
+            return {"_error": "API-Request Timeout."}
+        except Exception as e:
+            return {"_error": f"Unbekannter Fehler: {str(e)}"}
 
     @commands.group(name="luna", aliases=["lunadoc"])
     @commands.guild_only()
@@ -55,39 +57,56 @@ class LunaDoc(commands.Cog):
     async def luna_status(self, ctx):
         """Zeigt den Serverstatus der Luna API an."""
         data = await self.api_request("server/status")
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            embed = discord.Embed(title="❌ Fehler", description=data["_error"], color=discord.Color.red())
+            await ctx.send(embed=embed)
             return
         
-        embed = discord.Embed(title="Luna Server Status", color=discord.Color.green())
-        for key, value in data.items():
-            embed.add_field(name=key, value=str(value), inline=True)
+        embed = discord.Embed(title="🟢 Luna Server Status", color=discord.Color.green())
+        embed.set_footer(text=f"Angefragt von {ctx.author.name}", icon_url=ctx.author.display_avatar.url)
+        
+        if isinstance(data, dict):
+            for key, value in data.items():
+                display_value = str(value)[:1000]  # Begrenze lange Werte
+                embed.add_field(name=key.title(), value=display_value or "N/A", inline=True)
+        else:
+            embed.description = str(data)[:2000]
+        
         await ctx.send(embed=embed)
 
     @luna_group.command(name="players")
-    async def luna_players(self, ctx, online: bool = False, search: str = None, limit: int = 50):
+    async def luna_players(self, ctx, online: bool = False, *, search: str = None):
         """Zeigt eine Liste der Spieler an."""
-        params = {}
+        params = {"limit": "50"}
         if online:
             params["online"] = "true"
         if search:
             params["search"] = search
-        params["limit"] = str(limit)
         
         data = await self.api_request("players", params)
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        if not data:
-            await ctx.send("Keine Spieler gefunden.")
+        if not data or (isinstance(data, list) and len(data) == 0):
+            await ctx.send("ℹ️ Keine Spieler gefunden.")
             return
-
-        embed = discord.Embed(title="Spielerliste", color=discord.Color.blue())
-        for player in data[:10]:  # Zeige max. 10 Spieler im Embed
-            name = player.get("name", "Unbekannt")
-            uuid = player.get("id", "N/A")
-            embed.add_field(name=name, value=f"ID: `{uuid}`", inline=False)
+        
+        # Stelle sicher, dass data eine Liste ist
+        if not isinstance(data, list):
+            data = [data]
+        
+        embed = discord.Embed(title="🎮 Spielerliste", color=discord.Color.blue(), description=f"Gefunden: {len(data)} Spieler")
+        
+        for player in data[:10]:
+            if not isinstance(player, dict):
+                continue
+            name = player.get("name", player.get("username", "Unbekannt"))
+            uuid = player.get("id", player.get("uuid", "N/A"))
+            online_status = "🟢" if player.get("online", False) else "⚫"
+            embed.add_field(name=f"{online_status} {name}", value=f"ID: `{uuid}`", inline=False)
         
         if len(data) > 10:
             embed.set_footer(text=f"... und {len(data) - 10} weitere Spieler.")
@@ -98,18 +117,24 @@ class LunaDoc(commands.Cog):
     async def luna_player(self, ctx, player_id: str):
         """Zeigt Details zu einem spezifischen Spieler an."""
         data = await self.api_request(f"players/{player_id}")
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        embed = discord.Embed(title=f"Spieler: {data.get('name', 'Unbekannt')}", color=discord.Color.blue())
-        embed.add_field(name="ID", value=data.get("id", "N/A"), inline=True)
+        if not data or (isinstance(data, dict) and "error" in data):
+            await ctx.send("ℹ️ Spieler nicht gefunden.")
+            return
+        
+        embed = discord.Embed(title=f"👤 Spieler: {data.get('name', 'Unbekannt')}", color=discord.Color.blue())
+        embed.add_field(name="ID", value=data.get("id", data.get("uuid", "N/A")), inline=True)
         embed.add_field(name="Name", value=data.get("name", "N/A"), inline=True)
         
-        # Weitere Felder je nach API-Antwort hinzufügen
-        for key, value in data.items():
-            if key not in ["id", "name"]:
-                embed.add_field(name=key, value=str(value), inline=False)
+        # Zusätzliche Informationen
+        extra_fields = ["online", "firstJoin", "lastJoin", "playTime"]
+        for field in extra_fields:
+            if field in data:
+                embed.add_field(name=field.title(), value=str(data[field]), inline=False)
         
         await ctx.send(embed=embed)
 
@@ -118,19 +143,36 @@ class LunaDoc(commands.Cog):
         """Zeigt die Bans an."""
         params = {"active": "true" if active else "false"}
         data = await self.api_request("bans", params)
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        if not data:
-            await ctx.send("Keine Bans gefunden.")
+        if not data or (isinstance(data, list) and len(data) == 0):
+            status = "aktive" if active else "inaktive"
+            await ctx.send(f"ℹ️ Keine {status} Bans gefunden.")
             return
-
-        embed = discord.Embed(title="Bans", color=discord.Color.red())
-        for ban in data[:10]:  # Zeige max. 10 Bans
-            player = ban.get("player", {}).get("name", "Unbekannt")
+        
+        if not isinstance(data, list):
+            data = [data]
+        
+        embed = discord.Embed(title=f"{'🔴 Aktive' if active else '⚪ Inaktive'} Bans", color=discord.Color.red(), description=f"Gefunden: {len(data)} Bans")
+        
+        for ban in data[:10]:
+            if not isinstance(ban, dict):
+                continue
+            player_info = ban.get("player", {})
+            if isinstance(player_info, dict):
+                player_name = player_info.get("name", "Unbekannt")
+            else:
+                player_name = str(player_info) if player_info else "Unbekannt"
+            
             reason = ban.get("reason", "Kein Grund angegeben")
-            embed.add_field(name=player, value=f"Grund: {reason}", inline=False)
+            banned_by = ban.get("bannedBy", "Unbekannt")
+            date = ban.get("date", ban.get("created", "N/A"))
+            
+            value = f"**Grund:** {reason[:100]}\n**Von:** {banned_by}\n**Datum:** {date}"
+            embed.add_field(name=player_name, value=value, inline=False)
         
         if len(data) > 10:
             embed.set_footer(text=f"... und {len(data) - 10} weitere Bans.")
@@ -145,19 +187,33 @@ class LunaDoc(commands.Cog):
             params["type"] = case_type
         
         data = await self.api_request("cases", params)
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        if not data:
-            await ctx.send("Keine Fälle gefunden.")
+        if not data or (isinstance(data, list) and len(data) == 0):
+            msg = "Keine Fälle gefunden."
+            if case_type:
+                msg = f"Keine Fälle vom Typ '{case_type}' gefunden."
+            await ctx.send(f"ℹ️ {msg}")
             return
-
-        embed = discord.Embed(title="Fälle", color=discord.Color.orange())
-        for case in data[:10]:  # Zeige max. 10 Fälle
+        
+        if not isinstance(data, list):
+            data = [data]
+        
+        embed = discord.Embed(title="📁 Fälle", color=discord.Color.orange(), description=f"Gefunden: {len(data)} Fälle")
+        
+        for case in data[:10]:
+            if not isinstance(case, dict):
+                continue
             case_id = case.get("id", "N/A")
-            case_type = case.get("type", "Unbekannt")
-            embed.add_field(name=f"Fall #{case_id}", value=f"Typ: {case_type}", inline=False)
+            case_type_val = case.get("type", "Unbekannt")
+            player = case.get("player", {})
+            player_name = player.get("name", "Unbekannt") if isinstance(player, dict) else str(player)
+            
+            value = f"**Typ:** {case_type_val}\n**Spieler:** {player_name}"
+            embed.add_field(name=f"Fall #{case_id}", value=value, inline=False)
         
         if len(data) > 10:
             embed.set_footer(text=f"... und {len(data) - 10} weitere Fälle.")
@@ -168,43 +224,90 @@ class LunaDoc(commands.Cog):
     async def luna_staff(self, ctx):
         """Zeigt die Mitarbeiterliste an."""
         data = await self.api_request("staff")
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        if not data:
-            await ctx.send("Keine Mitarbeiter gefunden.")
+        # Handle verschiedene Antwortformate
+        if isinstance(data, dict):
+            # Vielleicht ist die Liste in einem Unterfeld
+            for key in ["staff", "members", "data", "result"]:
+                if key in data and isinstance(data[key], list):
+                    data = data[key]
+                    break
+            else:
+                # Wenn kein Listenfeld gefunden wurde, versuche es als einzelnes Element
+                data = [data]
+        
+        if not data or (isinstance(data, list) and len(data) == 0):
+            await ctx.send("ℹ️ Keine Mitarbeiter gefunden.")
             return
-
-        embed = discord.Embed(title="Mitarbeiter", color=discord.Color.gold())
+        
+        if not isinstance(data, list):
+            data = [data]
+        
+        embed = discord.Embed(title="👥 Mitarbeiter", color=discord.Color.gold(), description=f"Insgesamt: {len(data)}")
+        
         for member in data:
-            name = member.get("name", "Unbekannt")
-            role = member.get("role", "N/A")
-            embed.add_field(name=name, value=f"Rolle: {role}", inline=False)
+            if not isinstance(member, dict):
+                # Falls es nur ein String ist
+                embed.add_field(name=str(member), value="Mitarbeiter", inline=False)
+                continue
+            
+            name = member.get("name", member.get("username", "Unbekannt"))
+            role = member.get("role", member.get("rank", "N/A"))
+            permissions = member.get("permissions", [])
+            
+            value = f"**Rolle:** {role}"
+            if permissions:
+                perm_list = ", ".join(permissions[:5]) if isinstance(permissions, list) else str(permissions)
+                value += f"\n**Rechte:** {perm_list}"
+            
+            embed.add_field(name=name, value=value, inline=False)
         
         await ctx.send(embed=embed)
 
     @luna_group.command(name="gamedata")
-    async def luna_gamedata(self, ctx, category: str, search: str = None, limit: int = 50):
+    async def luna_gamedata(self, ctx, category: str, *, search: str = None):
         """Zeigt Spieldaten für eine Kategorie an."""
-        params = {"limit": str(limit)}
+        params = {"limit": "50"}
         if search:
             params["search"] = search
         
         data = await self.api_request(f"gamedata/{category}", params)
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        if not data:
-            await ctx.send(f"Keine Spieldaten für Kategorie '{category}' gefunden.")
+        if not data or (isinstance(data, list) and len(data) == 0):
+            await ctx.send(f"ℹ️ Keine Spieldaten für Kategorie '{category}' gefunden.")
             return
-
-        embed = discord.Embed(title=f"Spieldaten: {category}", color=discord.Color.purple())
-        for entry in data[:10]:  # Zeige max. 10 Einträge
+        
+        if not isinstance(data, list):
+            data = [data]
+        
+        embed = discord.Embed(title=f"🎲 Spieldaten: {category}", color=discord.Color.purple(), description=f"Gefunden: {len(data)} Einträge")
+        
+        for entry in data[:10]:
+            if not isinstance(entry, dict):
+                continue
             entry_id = entry.get("id", "N/A")
             name = entry.get("name", "Unbekannt")
-            embed.add_field(name=name, value=f"ID: `{entry_id}`", inline=False)
+            
+            # Zeige zusätzliche Infos wenn verfügbar
+            extra = []
+            if "value" in entry:
+                extra.append(f"Wert: {entry['value']}")
+            if "description" in entry:
+                extra.append(entry["description"][:50])
+            
+            value = f"ID: `{entry_id}`"
+            if extra:
+                value += "\n" + " | ".join(extra)
+            
+            embed.add_field(name=name, value=value, inline=False)
         
         if len(data) > 10:
             embed.set_footer(text=f"... und {len(data) - 10} weitere Einträge.")
@@ -215,19 +318,30 @@ class LunaDoc(commands.Cog):
     async def luna_crashes(self, ctx):
         """Zeigt die neuesten Absturzberichte an."""
         data = await self.api_request("crashes")
-        if "error" in data:
-            await ctx.send(f"Fehler: {data['error']}")
+        
+        if isinstance(data, dict) and "_error" in data:
+            await ctx.send(f"❌ Fehler: {data['_error']}")
             return
         
-        if not data:
-            await ctx.send("Keine Absturzberichte gefunden.")
+        if not data or (isinstance(data, list) and len(data) == 0):
+            await ctx.send("ℹ️ Keine Absturzberichte gefunden.")
             return
-
-        embed = discord.Embed(title="Absturzberichte", color=discord.Color.dark_grey())
-        for crash in data[:10]:  # Zeige max. 10 Berichte
+        
+        if not isinstance(data, list):
+            data = [data]
+        
+        embed = discord.Embed(title="💥 Absturzberichte", color=discord.Color.dark_grey(), description=f"Insgesamt: {len(data)} Berichte")
+        
+        for crash in data[:10]:
+            if not isinstance(crash, dict):
+                continue
             crash_id = crash.get("id", "N/A")
-            timestamp = crash.get("timestamp", "N/A")
-            embed.add_field(name=f"Crash #{crash_id}", value=f"Zeit: {timestamp}", inline=False)
+            timestamp = crash.get("timestamp", crash.get("date", crash.get("created", "N/A")))
+            server = crash.get("server", "Unbekannt")
+            error_type = crash.get("errorType", crash.get("type", "Unbekannt"))
+            
+            value = f"**Zeit:** {timestamp}\n**Server:** {server}\n**Typ:** {error_type}"
+            embed.add_field(name=f"Crash #{crash_id}", value=value, inline=False)
         
         if len(data) > 10:
             embed.set_footer(text=f"... und {len(data) - 10} weitere Berichte.")
@@ -240,12 +354,12 @@ class LunaDoc(commands.Cog):
         """Setzt Konfigurationseinstellungen (nur Bot-Besitzer)."""
         if setting.lower() == "token":
             self.token = value
-            await ctx.send("API-Token wurde gesetzt.")
+            await ctx.send("✅ API-Token wurde gesetzt.")
         elif setting.lower() == "url":
             self.base_url = value
-            await ctx.send("API-Basis-URL wurde gesetzt.")
+            await ctx.send("✅ API-Basis-URL wurde gesetzt.")
         else:
-            await ctx.send("Ungültige Einstellung. Verfügbare Einstellungen: `token`, `url`.")
+            await ctx.send("❌ Ungültige Einstellung. Verfügbare Einstellungen: `token`, `url`.")
 
 def setup(bot: Red):
     bot.add_cog(LunaDoc(bot))
