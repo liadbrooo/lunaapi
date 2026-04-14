@@ -25,7 +25,19 @@ class LunaDoc(commands.Cog):
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
-                    return await response.json()
+                    data = await response.json()
+                    # Neue API gibt Daten oft in einem "data" oder "result" Feld zurück
+                    if isinstance(data, dict):
+                        if "data" in data and isinstance(data["data"], list):
+                            return data["data"]
+                        elif "result" in data and isinstance(data["result"], list):
+                            return data["result"]
+                        elif "response" in data and isinstance(data["response"], list):
+                            return data["response"]
+                        # Wenn es ein Dict mit Fehler ist, gib es zurück
+                        if "error" in data:
+                            return data
+                    return data
                 elif response.status == 401:
                     return {"error": "Ungültiger oder fehlender API-Token."}
                 elif response.status == 404:
