@@ -1,246 +1,252 @@
-import aiohttp
 import discord
-from redbot.core import commands, checks, Config
+from redbot.core import commands, Config
 from redbot.core.utils.chat_formatting import box, pagify
-
+import aiohttp
+import asyncio
 
 class LunaDoc(commands.Cog):
-    """Interaktion mit der Luna API."""
+    """Interagiert mit der Luna API für Serverstatus, Spieler, Bans und mehr."""
 
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=1234567890)
-
         default_global = {
-            "api_token": "",
-            "base_url": "https://api.lunadoc.de/api/public/v1"  # Standard URL, anpassbar
+            "token": None,
+            "base_url": "https://api.lunadoc.de/api/public/v1"  # Standard URL anpassen falls nötig
         }
         self.config.register_global(**default_global)
-
         self.session = None
-
-    async def initialize(self):
-        self.session = aiohttp.ClientSession()
 
     async def cog_unload(self):
         if self.session:
             await self.session.close()
 
-    async def api_request(self, endpoint: str, params: dict = None):
-        """Führt eine Anfrage an die Luna API durch."""
-        base_url = await self.config.base_url()
-        token = await self.config.api_token()
-        url = f"{base_url}{endpoint}"
+    async def get_session(self):
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession()
+        return self.session
 
+    async def api_request(self, endpoint: str, params: dict = None):
+        """Führt einen API-Request durch."""
+        base_url = await self.config.base_url()
+        token = await self.config.token()
+        url = f"{base_url}{endpoint}"
+        
         headers = {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
-
+        
+        session = await self.get_session()
+        
         try:
-            async with self.session.get(url, headers=headers, params=params) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                elif resp.status == 401:
-                    return {"error": "Ungültiger oder fehlender API-Token."}
+            async with session.get(url, headers=headers, params=params, timeout=10) as resp:
+                if resp.status == 401:
+                    return None, "Ungültiger oder fehlender API-Token."
                 elif resp.status == 404:
-                    return {"error": "Ressource nicht gefunden."}
-                else:
-                    return {"error": f"Fehler {resp.status}: {resp.reason}"}
+                    return None, "Ressource nicht gefunden."
+                elif resp.status != 200:
+                    return None, f"API-Fehler: {resp.status}"
+                
+                return await resp.json(), None
+        except asyncio.TimeoutError:
+            return None, "Zeitüberschreitung bei der API-Anfrage."
         except Exception as e:
-            return {"error": f"Verbindungsfehler: {str(e)}"}
+            return None, f"Fehler: {str(e)}"
 
     @commands.group(name="luna", aliases=["lunadoc"])
     @commands.guild_only()
     async def luna_group(self, ctx):
-        """Befehle für die Luna API Interaktion."""
+        """Luna API Befehle."""
         pass
 
     @luna_group.command(name="status")
     async def luna_status(self, ctx):
-        """Zeigt den Serverstatus der Luna API."""
-        data = await self.api_request("/server/status")
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+        """Zeigt den Serverstatus an."""
+        data, error = await self.api_request("/server/status")
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
-        embed = discord.Embed(title="🖥️ Luna Server Status", color=discord.Color.green())
-        for key, value in data.items():
-            embed.add_field(name=key, value=str(value), inline=True)
-
+        
+        embed = discord.Embed(title="🖥️ Server Status", color=discord.Color.green())
+        embed.add_field(name="Status", value=data.get("status", "Unbekannt"), inline=False)
+        embed.add_field(name="Spieler Online", value=data.get("players_online", "N/A"), inline=True)
+        embed.add_field(name="Max Spieler", value=data.get("max_players", "N/A"), inline=True)
+        embed.add_field(name="Version", value=data.get("version", "N/A"), inline=True)
+        embed.add_field(name="Uptime", value=data.get("uptime", "N/A"), inline=True)
+        
         await ctx.send(embed=embed)
 
-    @luna_group.command(name="spieler", aliases=["players"])
-    async def luna_spieler(self, ctx, online: bool = None, suche: str = None, limit: int = 10):
-        """Listet Spieler auf. Optionen: online, suche, limit."""
-        params = {}
-        if online is not None:
-            params["online"] = str(online).lower()
-        if suche:
-            params["search"] = suche
-        params["limit"] = limit
-
-        data = await self.api_request("/players", params)
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+    @luna_group.command(name="players")
+    async def luna_players(self, ctx, online: bool = True, search: str = None, limit: int = 50):
+        """Zeigt eine Liste der Spieler an."""
+        params = {"online": str(online).lower(), "limit": limit}
+        if search:
+            params["search"] = search
+            
+        data, error = await self.api_request("/players", params)
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
+        
         if not data:
             await ctx.send("Keine Spieler gefunden.")
             return
-
-        embed = discord.Embed(title=f"👥 Spielerliste ({len(data)})", color=discord.Color.blue())
-
-        for player in data[:10]:  # Max 10 im Embed anzeigen
+        
+        embed = discord.Embed(title="👥 Spielerliste", color=discord.Color.blue())
+        description = ""
+        for player in data[:20]:  # Max 20 im Embed
             name = player.get("name", "Unbekannt")
-            pid = player.get("id", "N/A")
-            status = "🟢 Online" if player.get("online", False) else "🔴 Offline"
-            embed.add_field(name=name, value=f"ID: `{pid}`\n{status}", inline=False)
-
-        if len(data) > 10:
-            embed.set_footer(text=f"... und {len(data) - 10} weitere.")
-
+            uuid = player.get("id", "N/A")[:8]
+            description += f"• **{name}** (`{uuid}...`)\n"
+        
+        if len(data) > 20:
+            description += f"\n...und {len(data) - 20} weitere."
+            
+        embed.description = description or "Keine Spieler gefunden."
         await ctx.send(embed=embed)
 
-    @luna_group.command(name="spielerinfo", aliases=["player"])
-    async def luna_spielerinfo(self, ctx, player_id: str):
-        """Zeigt Details zu einem spezifischen Spieler."""
-        data = await self.api_request(f"/players/{player_id}")
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+    @luna_group.command(name="player")
+    async def luna_player(self, ctx, player_id: str):
+        """Zeigt Details zu einem bestimmten Spieler."""
+        data, error = await self.api_request(f"/players/{player_id}")
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
-        embed = discord.Embed(title=f"👤 Spieler: {data.get('name', 'Unbekannt')}", color=discord.Color.gold())
-        embed.add_field(name="ID", value=data.get("id", "N/A"), inline=True)
-        embed.add_field(name="Online", value="Ja" if data.get("online", False) else "Nein", inline=True)
-
-        # Weitere Felder dynamisch hinzufügen
-        for key, value in data.items():
-            if key not in ["name", "id", "online"]:
-                embed.add_field(name=key, value=str(value), inline=False)
-
+        
+        embed = discord.Embed(title=f"👤 Spieler: {data.get('name', player_id)}", color=discord.Color.blue())
+        embed.add_field(name="UUID", value=data.get("id", "N/A"), inline=False)
+        embed.add_field(name="Erster Join", value=data.get("first_join", "N/A"), inline=True)
+        embed.add_field(name="Letzter Join", value=data.get("last_join", "N/A"), inline=True)
+        embed.add_field(name="Spielzeit", value=data.get("playtime", "N/A"), inline=True)
+        embed.add_field(name="Bans", value=data.get("ban_count", 0), inline=True)
+        
         await ctx.send(embed=embed)
 
     @luna_group.command(name="bans")
-    async def luna_bans(self, ctx, aktiv: bool = True):
-        """Listet Bans auf. Standardmäßig nur aktive."""
-        params = {"active": str(aktiv).lower()}
-        data = await self.api_request("/bans", params)
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+    async def luna_bans(self, ctx, active: bool = True):
+        """Zeigt aktive oder alle Bans an."""
+        params = {"active": str(active).lower()}
+        data, error = await self.api_request("/bans", params)
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
+        
         if not data:
             await ctx.send("Keine Bans gefunden.")
             return
-
-        embed = discord.Embed(title=f"🚫 {'Aktive' if aktiv else 'Alle'} Bans ({len(data)})", color=discord.Color.red())
-
-        for ban in data[:5]:  # Max 5 anzeigen
-            grund = ban.get("reason", "Kein Grund angegeben")
-            spieler = ban.get("playerName", ban.get("playerId", "Unbekannt"))
-            embed.add_field(name="Spieler", value=f"{spieler}\nGrund: {grund[:50]}...", inline=False)
-
-        if len(data) > 5:
-            embed.set_footer(text=f"... und {len(data) - 5} weitere.")
-
+        
+        embed = discord.Embed(title="🔨 Bans", color=discord.Color.red())
+        description = ""
+        for ban in data[:10]:  # Max 10 im Embed
+            player = ban.get("player", {}).get("name", "Unbekannt")
+            reason = ban.get("reason", "Kein Grund angegeben")
+            description += f"• **{player}**: {reason}\n"
+        
+        if len(data) > 10:
+            description += f"\n...und {len(data) - 10} weitere."
+            
+        embed.description = description or "Keine Bans gefunden."
         await ctx.send(embed=embed)
 
-    @luna_group.command(name="faelle", aliases=["cases"])
-    async def luna_faelle(self, ctx, typ: str = None):
-        """Listet Fälle auf. Optional nach Typ filtern."""
+    @luna_group.command(name="cases")
+    async def luna_cases(self, ctx, case_type: str = None):
+        """Zeigt Fälle an (optional nach Typ filtern)."""
         params = {}
-        if typ:
-            params["type"] = typ
-
-        data = await self.api_request("/cases", params)
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+        if case_type:
+            params["type"] = case_type
+            
+        data, error = await self.api_request("/cases", params)
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
+        
         if not data:
             await ctx.send("Keine Fälle gefunden.")
             return
-
-        embed = discord.Embed(title=f"📁 Fälle ({len(data)})", color=discord.Color.orange())
-
-        for case in data[:5]:
-            titel = case.get("title", "Ohne Titel")
-            case_type = case.get("type", "Unbekannt")
-            embed.add_field(name=titel, value=f"Typ: {case_type}", inline=False)
-
+        
+        embed = discord.Embed(title="📁 Fälle", color=discord.Color.orange())
+        description = ""
+        for case in data[:10]:
+            case_id = case.get("id", "N/A")
+            case_type_val = case.get("type", "Unbekannt")
+            description += f"• Fall **#{case_id}**: {case_type_val}\n"
+        
+        if len(data) > 10:
+            description += f"\n...und {len(data) - 10} weitere."
+            
+        embed.description = description or "Keine Fälle gefunden."
         await ctx.send(embed=embed)
 
     @luna_group.command(name="staff")
     async def luna_staff(self, ctx):
-        """Listet das Staff-Team auf."""
-        data = await self.api_request("/staff")
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+        """Zeigt die Mitarbeiterliste an."""
+        data, error = await self.api_request("/staff")
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
+        
         if not data:
-            await ctx.send("Keine Staff-Mitglieder gefunden.")
+            await ctx.send("Keine Mitarbeiter gefunden.")
             return
-
-        embed = discord.Embed(title="🛡️ Luna Staff Team", color=discord.Color.purple())
-
-        for member in data:
-            name = member.get("name", "Unbekannt")
-            role = member.get("role", "Mitglied")
-            embed.add_field(name=name, value=role, inline=True)
-
+        
+        embed = discord.Embed(title="👮 Mitarbeiter", color=discord.Color.gold())
+        description = ""
+        for staff in data:
+            name = staff.get("name", "Unbekannt")
+            rank = staff.get("rank", "Unbekannt")
+            description += f"• **{name}** - {rank}\n"
+            
+        embed.description = description or "Keine Mitarbeiter gefunden."
         await ctx.send(embed=embed)
 
     @luna_group.command(name="crashes")
     async def luna_crashes(self, ctx):
-        """Listet recente Absturzberichte auf."""
-        data = await self.api_request("/crashes")
-
-        if "error" in data:
-            await ctx.send(f"❌ Fehler: {data['error']}")
+        """Zeigt recente Absturzberichte an."""
+        data, error = await self.api_request("/crashes")
+        
+        if error:
+            await ctx.send(f"❌ {error}")
             return
-
+        
         if not data:
             await ctx.send("Keine Absturzberichte gefunden.")
             return
-
-        embed = discord.Embed(title=f"💥 Absturzberichte ({len(data)})", color=discord.Color.dark_grey())
-
-        for crash in data[:5]:
-            datum = crash.get("date", "Unbekannt")
-            spieler = crash.get("player", "Unbekannt")
-            embed.add_field(name="Spieler", value=f"{spieler}\nDatum: {datum}", inline=False)
-
+        
+        embed = discord.Embed(title="💥 Absturzberichte", color=discord.Color.dark_red())
+        description = ""
+        for crash in data[:10]:
+            crash_id = crash.get("id", "N/A")
+            date = crash.get("date", "Unbekannt")
+            description += f"• **#{crash_id}** am {date}\n"
+        
+        if len(data) > 10:
+            description += f"\n...und {len(data) - 10} weitere."
+            
+        embed.description = description or "Keine Berichte gefunden."
         await ctx.send(embed=embed)
 
-    # Konfigurationsbefehle
-    @luna_group.group(name="set", aliases=["config"])
-    @checks.is_owner()
-    async def luna_set_group(self, ctx):
-        """Konfiguration des Luna Cogs (Nur Bot-Owner)."""
-        pass
+    @luna_group.group(name="set", invoke_without_command=True)
+    @commands.is_owner()
+    async def luna_set(self, ctx):
+        """Konfiguriere den Luna Cog (Nur Bot-Owner)."""
+        await ctx.send_help(ctx.command)
 
-    @luna_set_group.command(name="token")
+    @luna_set.command(name="token")
+    @commands.is_owner()
     async def luna_set_token(self, ctx, token: str):
-        """Setzt den API-Token für authentifizierte Anfragen."""
-        await self.config.api_token.set(token)
-        await ctx.send("✅ API-Token erfolgreich gespeichert.")
+        """Setzt den API-Token."""
+        await self.config.token.set(token)
+        await ctx.send("✅ API-Token erfolgreich gesetzt!")
 
-    @luna_set_group.command(name="url")
+    @luna_set.command(name="url")
+    @commands.is_owner()
     async def luna_set_url(self, ctx, url: str):
-        """Setzt die Basis-URL der Luna API."""
+        """Setzt die Basis-URL der API."""
         await self.config.base_url.set(url)
-        await ctx.send(f"✅ API-URL gesetzt auf: {url}")
-
-    @luna_set_group.command(name="reset")
-    async def luna_set_reset(self, ctx):
-        """Setzt alle Einstellungen auf Standard zurück."""
-        await self.config.api_token.set("")
-        await self.config.base_url.set("https://api.lunadoc.de/api/public/v1")
-        await ctx.send("✅ Einstellungen wurden zurückgesetzt.")
+        await ctx.send("✅ Basis-URL erfolgreich gesetzt!")
