@@ -12,7 +12,7 @@ class LunaDoc(commands.Cog):
 
     def __init__(self, bot: Red):
         self.bot = bot
-        self.base_url = "https://api.lunadoc.net/api/public/v1"  # Standard URL, kann konfiguriert werden
+        self.base_url = "https://api.luna.veryinsanee.space/api/public/v1"  # Offizielle API URL
         self.token = None  # Token kann konfiguriert werden
 
     async def api_request(self, endpoint: str, params: dict = None):
