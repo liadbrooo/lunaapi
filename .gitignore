@@ -1,6 +1,1 @@
-```
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-```
+Nothing should be ignored in this case, as only a Python source file (`lunadoc/__init__.py`) was modified and no build artifacts, dependencies, or temporary files were detected in the changes.
