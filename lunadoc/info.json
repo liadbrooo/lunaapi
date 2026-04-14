@@ -1,14 +1,11 @@
 {
-    "author": ["DeinName"],
-    "install_msg": "LunaDoc Cog erfolgreich installiert!",
+    "author": "LunaDoc Team",
+    "install_msg": "LunaDoc Cog erfolgreich installiert! Nutze `[p]luna --help` für eine Befehlsübersicht.",
+    "short_name": "lunadoc",
     "name": "LunaDoc",
-    "short": "Interaktion mit der Luna API",
-    "description": "Ein Redbot-Cog zum Abfragen von Spielerdaten, Bans, Fällen und mehr über die Luna API.",
+    "description": "Interaktion mit der Luna API - Abfrage von Spielerdaten, Bans, Fällen und mehr.",
     "version": "1.0.0",
+    "tags": ["minecraft", "api", "luna", "server"],
     "requirements": [],
-    "hidden": false,
-    "required_cogs": {},
-    "min_bot_version": "3.4.0",
-    "max_bot_version": "0.0.0",
-    "tags": ["luna", "api", "gaming", "moderation"]
+    "min_bot_version": "3.4.0"
 }
