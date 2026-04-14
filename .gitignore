@@ -1,1 +1,18 @@
-Nothing needs to be added to the .gitignore file based on the provided changes. The addition of 'lunadoc-repo/' appears to be a directory structure change without specific build artifacts, dependencies, or temporary files that require ignoring.
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build and distribution artifacts
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+.env
+.env.local
+```
