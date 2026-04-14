@@ -1,8 +1,6 @@
-"""LunaDoc - Ein Redbot Cog für die Luna API."""
 from .lunadoc import LunaDoc
 
-__red_end_user_data_statement__ = "Speichert nur den API-Token und die Basis-URL lokal."
+__red_version__ = "3.5.0"
 
-def setup(bot):
-    """Lädt den LunaDoc Cog."""
-    bot.add_cog(LunaDoc(bot))
+async def setup(bot):
+    await bot.add_cog(LunaDoc(bot))

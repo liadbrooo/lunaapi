@@ -1,14 +1,13 @@
 {
-    "author": ["Liad"],
-    "install_msg": "LunaDoc Cog erfolgreich installiert! Nutze `[p]luna set token <token>` um den API Token zu setzen.",
-    "short": "Interagiert mit der Luna API",
-    "description": "Ein Cog zum Abfragen von Spielerdaten, Bans, Fällen und mehr über die Luna API.",
-    "end_user_data_statement": "Speichert nur den API-Token und die Basis-URL lokal.",
-    "required_cogs": {},
-    "requirements": ["aiohttp"],
+    "author": ["LunaDoc Team"],
+    "install_msg": "LunaDoc Cog erfolgreich installiert! Nutze `[p]luna set token <token>` um die API zu konfigurieren.",
+    "short": "Interaktion mit der Luna API",
+    "description": "Ein Redbot Cog zur Abfrage von Spielerdaten, Bans, Fällen und mehr über die Luna API.",
+    "end_user_data_statement": "Dieser Cog speichert einen optionalen API-Token lokal.",
+    "requirements": [],
     "min_bot_version": "3.5.0",
-    "max_bot_version": "0.0.0",
+    "max_bot_version": "3.6.0",
     "hidden": false,
     "disabled": false,
-    "type": "COG"
+    "name": "LunaDoc"
 }
