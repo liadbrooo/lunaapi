@@ -1,11 +1,14 @@
 {
-    "author": "LunaDoc Team",
-    "install_msg": "LunaDoc Cog erfolgreich installiert! Nutze `[p]luna --help` für eine Befehlsübersicht.",
-    "short_name": "lunadoc",
-    "name": "LunaDoc",
-    "description": "Interaktion mit der Luna API - Abfrage von Spielerdaten, Bans, Fällen und mehr.",
-    "version": "1.0.0",
-    "tags": ["minecraft", "api", "luna", "server"],
-    "requirements": [],
-    "min_bot_version": "3.4.0"
+    "author": ["Liad"],
+    "install_msg": "LunaDoc Cog erfolgreich installiert! Nutze `[p]luna set token <token>` um den API Token zu setzen.",
+    "short": "Interagiert mit der Luna API",
+    "description": "Ein Cog zum Abfragen von Spielerdaten, Bans, Fällen und mehr über die Luna API.",
+    "end_user_data_statement": "Speichert nur den API-Token und die Basis-URL lokal.",
+    "required_cogs": {},
+    "requirements": ["aiohttp"],
+    "min_bot_version": "3.5.0",
+    "max_bot_version": "0.0.0",
+    "hidden": false,
+    "disabled": false,
+    "type": "COG"
 }
